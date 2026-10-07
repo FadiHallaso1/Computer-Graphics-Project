@@ -2,7 +2,10 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createWater } from './water.js';
 
-const SKY = 0x0b1a24;
+// Direction toward the sun disc in the Bridge2 skybox (measured from the
+// brightest region of posz.jpg, x mirrored to match Three's cubemap
+// convention). The specular glint uses the same vector.
+const SUN_DIR = new THREE.Vector3(0.154, 0.161, 0.975).normalize();
 
 // --- Renderer / scene / camera -------------------------------------------
 const container = document.getElementById('app');
@@ -13,26 +16,34 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 container.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(SKY);
 
-const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.set(0, 22, 55);
+// Skybox: "Bridge2" by Emil Persson (Humus), see textures/bridge2/readme.txt
+const envMap = new THREE.CubeTextureLoader()
+  .setPath('textures/bridge2/')
+  .load(['posx.jpg', 'negx.jpg', 'posy.jpg', 'negy.jpg', 'posz.jpg', 'negz.jpg']);
+envMap.colorSpace = THREE.SRGBColorSpace;   // sampled as linear in shaders
+scene.background = envMap;
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 6000);
+// Default view looks toward the low sun, so the glint path is in frame.
+camera.position.set(-6, 12, -46);
 
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(0, 0, 0);
+controls.target.set(0, 0, 4);
 controls.enableDamping = true;
 controls.maxPolarAngle = Math.PI * 0.49;   // keep the camera above the water
 controls.minDistance = 5;
 controls.maxDistance = 200;
 
 // --- Water ------------------------------------------------------------------
-const water = createWater({ size: 100, segments: 256, fogColor: SKY });
+const water = createWater({ sunDir: SUN_DIR });
+water.setEnvMap(envMap);
 scene.add(water.mesh);
 
 // --- HUD --------------------------------------------------------------------
 const fmt = (n) => n.toLocaleString('en-US');
 document.getElementById('hud-stats').textContent =
-  `${water.segments}×${water.segments} segments · ${fmt(water.vertexCount)} verts · ${fmt(water.triangleCount)} tris`;
+  `${water.coreSegments}² core + horizon skirt · ${fmt(water.vertexCount)} verts`;
 
 /** A HUD toggle button bound to a key. */
 function bindToggle(buttonId, key, apply) {
@@ -51,6 +62,9 @@ function bindToggle(buttonId, key, apply) {
 }
 bindToggle('btn-wire', 'w', (on) => water.setWireframe(on));
 bindToggle('btn-normals', 'n', (on) => water.setShowNormals(on));
+
+// Console access for tweaking, e.g. demo.water.uniforms.uShininess.value = 400
+window.demo = { scene, camera, controls, renderer, water };
 
 // --- Resize -----------------------------------------------------------------
 window.addEventListener('resize', () => {

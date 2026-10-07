@@ -1,5 +1,5 @@
 // Water surface vertex shader.
-// Stage 3: sum of NUM_WAVES Gerstner waves + exact analytic normals.
+// Stage 3–4: sum of NUM_WAVES Gerstner waves + exact analytic normals.
 //
 // For wave i (direction D_i, wavelength λ_i, amplitude A_i, phase φ_i):
 //   k_i = 2π / λ_i,   ω_i = sqrt(g k_i),   θ_i = k_i (D_i · (x,z)) − ω_i t + φ_i
@@ -19,21 +19,32 @@
 //   N     = normalize( ∂P/∂z × ∂P/∂x )
 //
 // Flat check: (0,0,1) × (1,0,0) = (0,1,0).
+//
+// Horizon skirt: outside the dense core the grid spacing (aCell) grows, so
+// each wave is faded out as the mesh becomes too coarse to sample it,
+// between 10 and 4 vertices per wavelength (a geometric Nyquist limit).
+// Short chop fades just past the core, long swell carries much further,
+// so there is no single visible line where the waves stop.
+// In the core every wave has > 10 vertices per wavelength, the fade is
+// exactly 1 and the normals are exact; in the skirt ∂fade/∂x is ignored.
 
 export default /* glsl */ `
 #define NUM_WAVES 4
 
-uniform float uTime;           // simulation time (already scaled by speed)
+uniform float uTime;             // simulation time (already scaled by speed)
 uniform vec4  uWaves[NUM_WAVES]; // (dir angle rad, wavelength, amplitude, phase)
-uniform float uQ;              // shared Gerstner steepness
+uniform float uQ;                // shared Gerstner steepness
 uniform float uGravity;
+uniform float uCoreHalf;         // half edge length of the dense core
+
+attribute float aCell;           // local grid spacing at this vertex
 
 varying vec3 vWorldPos;
 varying vec3 vNormal;
-varying vec2 vUv;
+varying vec2 vUv;                // 0..1 across the core (ripple texture space)
 
 void main() {
-  vec3 base = position;        // undisplaced point on the plane (y = 0)
+  vec3 base = position;          // undisplaced point on the plane (y = 0)
   vec3 p    = base;
 
   vec3 dPdx = vec3(1.0, 0.0, 0.0);
@@ -43,7 +54,7 @@ void main() {
     vec4  w = uWaves[i];
     vec2  D = vec2(cos(w.x), sin(w.x));
     float k = 6.28318530718 / w.y;
-    float A = w.z;
+    float A = w.z * (1.0 - smoothstep(0.1 * w.y, 0.25 * w.y, aCell));
     float omega = sqrt(uGravity * k);
 
     float theta = k * dot(D, base.xz) - omega * uTime + w.w;
@@ -66,7 +77,7 @@ void main() {
   vec4 world = modelMatrix * vec4(p, 1.0);
   vWorldPos = world.xyz;
   vNormal = normalize(mat3(modelMatrix) * n);
-  vUv = uv;
+  vUv = base.xz / (2.0 * uCoreHalf) + 0.5;
 
   gl_Position = projectionMatrix * viewMatrix * world;
 }
