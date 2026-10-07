@@ -4,6 +4,9 @@ import fragmentShader from './shaders/water.frag.js';
 
 const DEG = Math.PI / 180;
 
+/** Max number of objects casting sun shadows on the water (see water.frag.js). */
+export const MAX_CASTERS = 12;
+
 /**
  * Base wave set: long swell plus shorter cross-chop. Directions are spread so
  * crests don't line up into an obviously periodic pattern, and wavelengths
@@ -30,13 +33,19 @@ const MOUNDS = [
 
 /**
  * One mesh, two grid densities, laid in XZ:
- *  - a dense core (coreSize, coreSegments): this is where waves, ripples
- *    and shading detail live;
+ *  - a dense core (coreSize, coreSegments): the full-detail wave field
+ *    (the ripple area sits in its centre);
  *  - a skirt of outerSegments rings per side reaching farSize, whose
  *    coordinate grows as a·t + b·t⁴. a is chosen so the first skirt cell
  *    matches the core cell, so spacing grows smoothly with no seam.
  * The skirt exists so the water reaches the skybox horizon; waves fade out
  * across it as the cells become too coarse for each wavelength.
+ *
+ * The fade is driven by aCell, the grid spacing as a function of *radial*
+ * distance r from the centre: the spacing the axis-aligned grid has at
+ * distance r along an axis. Every point at radius r has |x|, |z| ≤ r, so its
+ * real cells are never coarser than that; the fade is therefore always
+ * safe, and its contours are circles rather than the grid's squares.
  */
 function createGradedPlane(coreSize, coreSegments, farSize, outerSegments) {
   const n = coreSegments + 2 * outerSegments;
@@ -56,21 +65,30 @@ function createGradedPlane(coreSize, coreSegments, farSize, outerSegments) {
     const d = coreHalf + a * t + b * t ** 4;
     return j < 0 ? -d : d;
   };
-  // local cell size around index k (average of the two neighbouring cells)
-  const spacing = (k) => {
-    const lo = Math.max(k - 1, 0), hi = Math.min(k + 1, n);
-    return (coord(hi) - coord(lo)) / (hi - lo);
+  // Grid spacing at distance r from the centre along an axis:
+  // d(t) = coreHalf + a t + b t⁴  ->  spacing = d'(t) / outerSegments.
+  // Invert d(t) = r by bisection (d is monotonic in t).
+  const cellAtRadius = (r) => {
+    if (r <= coreHalf) return cell;
+    let lo = 0, hi = 1;
+    if (coreHalf + a + b <= r) return (a + 4 * b) / outerSegments;
+    for (let i = 0; i < 40; i++) {
+      const t = 0.5 * (lo + hi);
+      if (coreHalf + a * t + b * t ** 4 < r) lo = t; else hi = t;
+    }
+    const t = 0.5 * (lo + hi);
+    return (a + 4 * b * t ** 3) / outerSegments;
   };
   const index = (s) => Math.round((s + 0.5) * n);  // unit-plane coord -> k
 
   const pos = geometry.attributes.position;
   const cellAttr = new Float32Array(pos.count);
   for (let i = 0; i < pos.count; i++) {
-    const kx = index(pos.getX(i));
-    const kz = index(pos.getZ(i));
-    pos.setX(i, coord(kx));
-    pos.setZ(i, coord(kz));
-    cellAttr[i] = Math.max(spacing(kx), spacing(kz));
+    const x = coord(index(pos.getX(i)));
+    const z = coord(index(pos.getZ(i)));
+    pos.setX(i, x);
+    pos.setZ(i, z);
+    cellAttr[i] = cellAtRadius(Math.hypot(x, z));
   }
   // Per-vertex grid spacing: the vertex shader fades each wave out where
   // the mesh is too coarse to represent it (see water.vert.js).
@@ -82,13 +100,14 @@ function createGradedPlane(coreSize, coreSegments, farSize, outerSegments) {
  * The water surface: graded plane displaced by summed Gerstner waves in the
  * vertex shader and shaded with Fresnel / reflection / glint / depth color.
  *
- * Ripple texture space (stage 5): vUv = 0..1 across the dense core.
+ * Ripple texture space: vUv = 0..1 across the central ripple area
+ * (ripples.size wide), which is smaller than the wave field.
  */
 export function createWater({
-  coreSize = 100,
-  coreSegments = 256,
+  coreSize = 400,       // wave field: 400 × 400 units
+  coreSegments = 800,   // 0.5-unit cells: ≥ 8 vertices on the shortest wave
   farSize = 4000,
-  outerSegments = 96,
+  outerSegments = 64,
   sunDir = new THREE.Vector3(0.154, 0.161, 0.975),
 } = {}) {
   const geometry = createGradedPlane(coreSize, coreSegments, farSize, outerSegments);
@@ -106,7 +125,6 @@ export function createWater({
     uWaves:        { value: BASE_WAVES.map(() => new THREE.Vector4()) },
     uQ:            { value: 0 },
     uGravity:      { value: 9.81 },
-    uCoreHalf:     { value: coreSize / 2 },
 
     // Shading
     uEnvMap:       { value: null },
@@ -121,10 +139,19 @@ export function createWater({
     uFloorBase:    { value: FLOOR_BASE },
     uMounds:       { value: MOUNDS.map((m) => new THREE.Vector4(...m)) },
 
+    // Floating objects: planar reflection pass + analytic sun shadows
+    uObjReflection:  { value: null },
+    uMirrorViewProj: { value: new THREE.Matrix4() },
+    uObjReflOn:      { value: false },
+    uReflDistort:    { value: 0.035 },
+    uCasterA:        { value: Array.from({ length: MAX_CASTERS }, () => new THREE.Vector4()) },
+    uCasterB:        { value: Array.from({ length: MAX_CASTERS }, () => new THREE.Vector4()) },
+    uCasterCount:    { value: 0 },
+
     // Ripples (stage 5)
     uRipple:       { value: null },
     uRippleTexel:  { value: 1 / 512 },
-    uCoreSize:     { value: coreSize },
+    uRippleSize:   { value: 160 },   // set from the ripple sim in setRipples()
 
     uShowNormals:  { value: false },
   };
@@ -198,17 +225,31 @@ export function createWater({
   }
 
   /**
-   * Intersect a ray with the displaced surface: march from above the
-   * highest possible crest down to below the lowest trough, then bisect
-   * the first crossing. Returns the hit point and the undisplaced base
-   * position (which is what the ripple texture is indexed by), or null.
+   * Intersect a ray with the displaced surface inside the ripple area (the
+   * only place clicks do anything): march from above the highest possible
+   * crest down to below the lowest trough, then bisect the first crossing.
+   * Returns the hit point, the undisplaced base position, and the ripple
+   * texture uv it maps to, or null.
    */
   function raycast(ray) {
     const o = ray.origin, d = ray.direction;
     if (d.y > -1e-4) return null;                         // looking up
+    const rippleSize = uniforms.uRippleSize.value;
+    const half = rippleSize / 2;
     const maxH = uniforms.uWaves.value.reduce((s, w) => s + w.z, 0) + 1.0;
-    const tStart = Math.max((maxH - o.y) / d.y, 0);
-    const tEnd = (-maxH - o.y) / d.y;
+    let tStart = Math.max((maxH - o.y) / d.y, 0);
+    let tEnd = (-maxH - o.y) / d.y;
+    // Clip to the ripple area's XZ square (slab test)
+    for (const [oc, dc] of [[o.x, d.x], [o.z, d.z]]) {
+      if (Math.abs(dc) < 1e-9) {
+        if (Math.abs(oc) > half) return null;
+        continue;
+      }
+      const ta = (-half - oc) / dc, tb = (half - oc) / dc;
+      tStart = Math.max(tStart, Math.min(ta, tb));
+      tEnd = Math.min(tEnd, Math.max(ta, tb));
+    }
+    if (tStart >= tEnd) return null;
     const stepLen = 0.2;
     const f = (t) => (o.y + d.y * t) - surfaceAt(o.x + d.x * t, o.z + d.z * t).height;
 
@@ -226,7 +267,7 @@ export function createWater({
         return {
           point: new THREE.Vector3(X, s.height, Z),
           base: new THREE.Vector2(s.baseX, s.baseZ),
-          uv: new THREE.Vector2(s.baseX / coreSize + 0.5, s.baseZ / coreSize + 0.5),
+          uv: new THREE.Vector2(s.baseX / rippleSize + 0.5, s.baseZ / rippleSize + 0.5),
         };
       }
       t0 = t1; f0 = f1;
@@ -244,12 +285,33 @@ export function createWater({
     triangleCount: geometry.index.count / 3,
     syncWaves,
     displace,
+    surfaceAt,
     raycast,
+    /** Planar reflection of the floating objects (see reflection.js). */
+    setObjectReflection(texture, viewProj, on) {
+      uniforms.uObjReflection.value = texture;
+      uniforms.uMirrorViewProj.value.copy(viewProj);
+      uniforms.uObjReflOn.value = on && !!texture;
+    },
+    /**
+     * Sun-shadow casters, each an ellipse lying flat at height h:
+     * { x, z, h, heading, halfWidth, halfLength }. heading ψ: forward = (sin ψ, cos ψ).
+     */
+    setShadowCasters(casters, on) {
+      const n = on ? Math.min(casters.length, MAX_CASTERS) : 0;
+      for (let i = 0; i < n; i++) {
+        const c = casters[i];
+        uniforms.uCasterA.value[i].set(c.x, c.z, c.h, c.heading);
+        uniforms.uCasterB.value[i].set(c.halfWidth, c.halfLength, 0, 0);
+      }
+      uniforms.uCasterCount.value = n;
+    },
     setEnvMap(tex) { uniforms.uEnvMap.value = tex; },
     /** Point the shaders at the latest ripple state (call every frame). */
     setRipples(ripples) {
       uniforms.uRipple.value = ripples.texture;
       uniforms.uRippleTexel.value = 1 / ripples.resolution;
+      uniforms.uRippleSize.value = ripples.size;
     },
     setWireframe(on) { material.wireframe = on; },
     setShowNormals(on) { uniforms.uShowNormals.value = on; },

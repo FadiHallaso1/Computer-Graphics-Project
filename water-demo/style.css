@@ -1,12 +1,14 @@
-/* Full-bleed canvas with a compact instrument strip in the corner.
-   Single dark look on purpose: the scene is the page. */
+/* Full-bleed canvas; a small title card bottom-left and the lil-gui panel
+   top-right, both glass-over-water. Single dark look on purpose: the scene
+   is the page. */
 :root {
   --ink: #0b1a24;
-  --panel: rgba(9, 22, 31, 0.78);
-  --line: rgba(160, 205, 225, 0.22);
-  --text: #d8ebf2;
-  --muted: #86a9b8;
+  --panel: rgba(8, 22, 30, 0.72);
+  --line: rgba(160, 205, 225, 0.2);
+  --text: #dcedf3;
+  --muted: #8fb1bf;
   --accent: #5fd0e6;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   color-scheme: dark;
 }
@@ -28,46 +30,66 @@ html, body {
   touch-action: none;
 }
 
+/* --- Title card --------------------------------------------------------- */
 .hud {
   position: fixed;
   left: 16px;
   bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 14px;
   max-width: calc(100% - 32px);
-  padding: 8px 12px;
+  padding: 10px 14px;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 6px;
-  font: 12px/1.4 var(--mono);
-  backdrop-filter: blur(6px);
+  border-radius: 8px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  pointer-events: none;           /* never steal clicks from the water */
 }
 
-.hud-stage { color: var(--accent); letter-spacing: 0.04em; }
-.hud-stat  { color: var(--muted); font-variant-numeric: tabular-nums; }
+.hud-title {
+  margin: 0 0 4px;
+  font: 600 15px/1.2 var(--sans);
+  letter-spacing: 0.02em;
+}
 
-.hud button {
-  font: inherit;
-  color: var(--text);
-  background: transparent;
+.hud-hint {
+  margin: 0;
+  font: 12px/1.5 var(--mono);
+  color: var(--muted);
+}
+.hud-hint b { color: var(--text); font-weight: 500; }
+
+.hint-touch { display: none; }
+@media (hover: none) and (pointer: coarse) {
+  .hint-mouse { display: none; }
+  .hint-touch { display: block; }
+}
+
+/* --- lil-gui, themed to match ------------------------------------------- */
+/* `html` prefix: lil-gui injects its own stylesheet after this one, so the
+   overrides need the higher specificity to win. */
+html .lil-gui {
+  --background-color: rgba(8, 22, 30, 0.82);
+  --title-background-color: rgba(14, 38, 50, 0.95);
+  --widget-color: rgba(120, 180, 205, 0.16);
+  --hover-color: rgba(120, 180, 205, 0.26);
+  --focus-color: rgba(120, 180, 205, 0.34);
+  --number-color: var(--accent);
+  --string-color: var(--accent);
+  --text-color: var(--text);
+  --font-family: var(--sans);
+  --font-family-mono: var(--mono);
+}
+html .lil-gui.lil-root {
+  top: calc(12px + env(safe-area-inset-top, 0px)) !important;
+  right: 12px !important;
+  max-height: calc(100% - 24px - env(safe-area-inset-top, 0px));
   border: 1px solid var(--line);
-  border-radius: 4px;
-  padding: 3px 8px;
-  cursor: pointer;
-}
-.hud button:hover { border-color: var(--accent); }
-.hud button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.hud button[aria-pressed="true"] { color: var(--ink); background: var(--accent); border-color: var(--accent); }
-
-kbd {
-  font: inherit;
-  opacity: 0.7;
-  margin-left: 4px;
+  border-radius: 8px;
+  overflow: hidden auto;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
-@media (hover: none) { kbd { display: none; } }
-
-.hud-hint { color: var(--text); }
-@media (hover: none) { .hud-hint { display: none; } }
+@media (max-width: 480px) {
+  html .lil-gui.lil-root { width: calc(100% - 24px) !important; }
+}

@@ -20,12 +20,14 @@
 //
 // Flat check: (0,0,1) × (1,0,0) = (0,1,0).
 //
-// Horizon skirt: outside the dense core the grid spacing (aCell) grows, so
-// each wave is faded out as the mesh becomes too coarse to sample it,
-// between 10 and 4 vertices per wavelength (a geometric Nyquist limit).
-// Short chop fades just past the core, long swell carries much further,
-// so there is no single visible line where the waves stop.
-// In the core every wave has > 10 vertices per wavelength, the fade is
+// Horizon skirt: outside the dense core the grid spacing grows, so each
+// wave is faded out as the mesh becomes too coarse to sample it, between
+// 8 and 4 vertices per wavelength (a geometric Nyquist limit). aCell is
+// that spacing as a function of radial distance (see water.js), so the
+// fade contours are circles, not the grid's squares. Short chop fades
+// just past the core, long swell carries much further, so there is no
+// single visible line where the waves stop.
+// In the core every wave has ≥ 8 vertices per wavelength, the fade is
 // exactly 1 and the normals are exact; in the skirt ∂fade/∂x is ignored.
 //
 // Ripples (stage 5): the wave-equation height field h(u,v) is added to y
@@ -40,7 +42,7 @@ uniform float uTime;             // simulation time (already scaled by speed)
 uniform vec4  uWaves[NUM_WAVES]; // (dir angle rad, wavelength, amplitude, phase)
 uniform float uQ;                // shared Gerstner steepness
 uniform float uGravity;
-uniform float uCoreHalf;         // half edge length of the dense core
+uniform float uRippleSize;       // world size covered by the ripple texture (centred)
 uniform sampler2D uRipple;       // R = ripple height (world units)
 
 attribute float aCell;           // local grid spacing at this vertex
@@ -48,7 +50,7 @@ attribute float aCell;           // local grid spacing at this vertex
 varying vec3 vWorldPos;
 varying vec3 vTangentX;          // ∂P/∂x of the Gerstner surface
 varying vec3 vTangentZ;          // ∂P/∂z of the Gerstner surface
-varying vec2 vUv;                // 0..1 across the core (ripple texture space)
+varying vec2 vUv;                // ripple texture space: 0..1 across the central ripple area
 
 void main() {
   vec3 base = position;          // undisplaced point on the plane (y = 0)
@@ -61,7 +63,7 @@ void main() {
     vec4  w = uWaves[i];
     vec2  D = vec2(cos(w.x), sin(w.x));
     float k = 6.28318530718 / w.y;
-    float A = w.z * (1.0 - smoothstep(0.1 * w.y, 0.25 * w.y, aCell));
+    float A = w.z * (1.0 - smoothstep(0.125 * w.y, 0.25 * w.y, aCell));
     float omega = sqrt(uGravity * k);
 
     float theta = k * dot(D, base.xz) - omega * uTime + w.w;
@@ -80,7 +82,7 @@ void main() {
   }
 
   // Ripple height, indexed by the undisplaced position (zero outside the core)
-  vec2 ruv = base.xz / (2.0 * uCoreHalf) + 0.5;
+  vec2 ruv = base.xz / uRippleSize + 0.5;
   float inCore = step(0.0, ruv.x) * step(ruv.x, 1.0) * step(0.0, ruv.y) * step(ruv.y, 1.0);
   p.y += texture2D(uRipple, ruv).r * inCore;
 

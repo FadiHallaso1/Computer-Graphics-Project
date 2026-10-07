@@ -23,9 +23,23 @@
 //
 // The normal combines the analytic Gerstner tangents (from the vertex
 // shader) with the ripple height field's slope, sampled per fragment.
+//
+// Floating objects feed two more terms:
+//   - Object reflections: a planar mirror pass (reflection.js) renders the
+//     objects from below the surface. Projecting the fragment through that
+//     mirror camera gives where its reflection lands; the lookup is offset
+//     by N.xz so the reflection wobbles with the waves. It replaces the sky
+//     in the reflection term wherever an object is, so Fresnel weights it
+//     exactly like the sky reflection.
+//   - Sun shadows: each object is an ellipse lying flat at its height h.
+//     The fragment is shadowed if the ray toward the sun passes through one:
+//       q = P.xz + L.xz · (h − P.y) / L.y,   inside if (q_side/a)² + (q_fwd/b)² < 1
+//     Shadow removes the sun glint and some sunlit in-scatter of the body;
+//     it does not touch the reflection (a shadow can't darken a mirror image).
 
 export default /* glsl */ `
 #define NUM_MOUNDS 2
+#define MAX_CASTERS 12
 
 uniform samplerCube uEnvMap;
 uniform float uF0;
@@ -43,7 +57,16 @@ uniform vec4  uMounds[NUM_MOUNDS]; // (center x, center z, sigma, height)
 
 uniform sampler2D uRipple;    // R = ripple height (world units)
 uniform float uRippleTexel;   // 1 / ripple resolution
-uniform float uCoreSize;      // world size covered by the ripple texture
+uniform float uRippleSize;    // world size covered by the ripple texture
+
+uniform sampler2D uObjReflection; // objects seen from the mirror camera (alpha = coverage)
+uniform mat4  uMirrorViewProj;
+uniform bool  uObjReflOn;
+uniform float uReflDistort;       // how far wave normals push the reflection lookup
+
+uniform vec4  uCasterA[MAX_CASTERS]; // (x, z, height, heading)
+uniform vec4  uCasterB[MAX_CASTERS]; // (half width, half length, -, -)
+uniform int   uCasterCount;
 
 uniform bool  uShowNormals;   // debug: render N as RGB
 
@@ -76,16 +99,34 @@ float schlick(float cosTheta) {
   return uF0 + (1.0 - uF0) * pow(1.0 - clamp(cosTheta, 0.0, 1.0), 5.0);
 }
 
+// 1 = fully sunlit, 0 = fully in an object's shadow (soft-edged).
+float sunVisibility(vec3 P) {
+  float lit = 1.0;
+  for (int i = 0; i < MAX_CASTERS; i++) {
+    if (i >= uCasterCount) break;
+    vec4 a = uCasterA[i];
+    vec2 halfAxes = uCasterB[i].xy;
+    float t = (a.z - P.y) / uSunDir.y;          // along the ray toward the sun
+    if (t <= 0.0) continue;
+    vec2 q    = P.xz + uSunDir.xz * t - a.xy;
+    vec2 fwd  = vec2(sin(a.w), cos(a.w));
+    vec2 side = vec2(cos(a.w), -sin(a.w));
+    vec2 l = vec2(dot(q, side), dot(q, fwd)) / halfAxes;
+    lit = min(lit, smoothstep(0.55, 1.15, dot(l, l)));
+  }
+  return lit;
+}
+
 void main() {
   // Normal = Gerstner tangents + ripple slope, crossed per fragment.
   // Ripple slope by central differences on the simulation grid:
-  //   ∂h/∂x = (h(u+Δ) − h(u−Δ)) / (2Δ · coreSize)
+  //   ∂h/∂x = (h(u+Δ) − h(u−Δ)) / (2Δ · rippleSize)
   vec3 tx = vTangentX;
   vec3 tz = vTangentZ;
   if (all(greaterThanEqual(vUv, vec2(0.0))) && all(lessThanEqual(vUv, vec2(1.0)))) {
     vec2 du = vec2(uRippleTexel, 0.0);
     vec2 dv = vec2(0.0, uRippleTexel);
-    float scale = 1.0 / (2.0 * uRippleTexel * uCoreSize);
+    float scale = 1.0 / (2.0 * uRippleTexel * uRippleSize);
     tx.y += (texture2D(uRipple, vUv + du).r - texture2D(uRipple, vUv - du).r) * scale;
     tz.y += (texture2D(uRipple, vUv + dv).r - texture2D(uRipple, vUv - dv).r) * scale;
   }
@@ -121,18 +162,31 @@ void main() {
   float roughLod = 2.5 * smoothstep(40.0, 300.0, dist);
   vec3 reflection = sampleEnvLod(R, roughLod);
 
+  //    Objects in the reflection: project the fragment (on the mean plane)
+  //    through the mirror camera, nudged by the wave normal.
+  if (uObjReflOn) {
+    vec4 c = uMirrorViewProj * vec4(vWorldPos.x, 0.0, vWorldPos.z, 1.0);
+    if (c.w > 0.0) {
+      vec2 ruv = c.xy / c.w * 0.5 + 0.5 + N.xz * uReflDistort;
+      vec4 obj = texture2D(uObjReflection, ruv);
+      reflection = mix(reflection, obj.rgb, obj.a);
+    }
+  }
+
+  float sunLit = sunVisibility(vWorldPos);
+
   // 3. Water body: refracted ray -> seabed -> Beer–Lambert
   float depth = max(vWorldPos.y - floorHeight(vWorldPos.xz), 0.0);
   vec3  T = refract(-V, N, 1.0 / 1.333);
   float path = depth / max(-T.y, 0.1);
   vec3  transmittance = exp(-uAbsorption * path);
-  vec3  seabed = uSandColor * (0.35 + 0.65 * max(uSunDir.y, 0.0));
-  vec3  body = mix(uDeepColor, seabed, transmittance);
+  vec3  seabed = uSandColor * (0.35 + 0.65 * max(uSunDir.y, 0.0) * sunLit);
+  vec3  body = mix(uDeepColor, seabed, transmittance) * mix(0.8, 1.0, sunLit);
 
-  // 4. Sun glint
+  // 4. Sun glint (blocked where an object shades the water)
   vec3  H = normalize(uSunDir + V);
   float spec = pow(max(dot(N, H), 0.0), uShininess);
-  vec3  glint = uSunColor * uSunIntensity * spec * schlick(dot(H, V));
+  vec3  glint = uSunColor * uSunIntensity * spec * schlick(dot(H, V)) * sunLit;
 
   vec3 col = mix(body, reflection, F) + glint;
 
