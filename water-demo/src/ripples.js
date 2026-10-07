@@ -3,6 +3,11 @@ import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { rippleVertex, rippleFragment } from './shaders/ripple.frag.js';
 
 const MAX_DROPS = 8;
+const SPONGE = 0.04;   // width of the absorbing ring, in uv
+const SPONGE_STRENGTH = 0.1;   // extra damping per step at the outer edge
+
+// Drops are accepted only well inside the absorbing ring (uv radius).
+const ACTIVE_RADIUS = 0.5 - 1.5 * SPONGE;
 
 /**
  * Interactive ripples: the 2D wave equation solved on the GPU with two
@@ -52,7 +57,8 @@ export function createRipples(renderer, {
     uTexel:     { value: new THREE.Vector2(1 / resolution, 1 / resolution) },
     uC2:        { value: 0 },
     uDamping:   { value: params.damping },
-    uSponge:    { value: 0.04 },
+    uSponge:    { value: SPONGE },
+    uSpongeStrength: { value: SPONGE_STRENGTH },
     uDrops:     { value: Array.from({ length: MAX_DROPS }, () => new THREE.Vector4()) },
     uDropCount: { value: 0 },
   };
@@ -65,17 +71,24 @@ export function createRipples(renderer, {
     depthWrite: false,
   }));
 
-  // Start from rest: clear both targets to zero
-  const prevTarget = renderer.getRenderTarget();
-  const prevClear = renderer.getClearColor(new THREE.Color());
-  const prevAlpha = renderer.getClearAlpha();
-  renderer.setClearColor(0x000000, 0);
-  for (const rt of [read, write]) { renderer.setRenderTarget(rt); renderer.clear(); }
-  renderer.setRenderTarget(prevTarget);
-  renderer.setClearColor(prevClear, prevAlpha);
-
   const pending = [];   // drops waiting for the next step
   let accumulator = 0;
+
+  /** Flatten the water: clear both targets to zero. */
+  function reset() {
+    const prevTarget = renderer.getRenderTarget();
+    const prevClear = renderer.getClearColor(new THREE.Color());
+    const prevAlpha = renderer.getClearAlpha();
+    renderer.setClearColor(0x000000, 0);
+    for (const rt of [read, write]) { renderer.setRenderTarget(rt); renderer.clear(); }
+    renderer.setRenderTarget(prevTarget);
+    renderer.setClearColor(prevClear, prevAlpha);
+    pending.length = 0;
+  }
+  reset();   // start from rest
+
+  /** True if a drop at (u, v) lands in the live (non-absorbing) disc. */
+  const contains = (u, v) => Math.hypot(u - 0.5, v - 0.5) <= ACTIVE_RADIUS;
 
   function step() {
     // Courant number from the target speed; clamp below the 2D CFL limit.
@@ -103,13 +116,20 @@ export function createRipples(renderer, {
     /** Render target holding the latest state (for readback / debugging). */
     get target() { return read; },
     stepRate,
+    reset,
+    activeRadius: ACTIVE_RADIUS,
+    contains,
+    /** Simulation uniforms, exposed for console experiments and tests. */
+    uniforms,
+    /** Largest wave speed the scheme stays stable at (C = 0.7). */
+    maxWaveSpeed: (0.7 * texelWorld) / dt,
 
     /**
      * Queue a drop at water-core uv (0..1). Negative strength pushes the
      * surface down like a falling stone.
      */
     addDrop(u, v, strength = -params.dropStrength, radius = params.dropRadius) {
-      if (u < 0 || u > 1 || v < 0 || v > 1) return;
+      if (!contains(u, v)) return;
       if (pending.length >= 64) pending.shift();
       pending.push(new THREE.Vector4(u, v, radius / size, strength));
     },

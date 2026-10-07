@@ -11,8 +11,9 @@
 // wave speed and the fixed simulation step, and clamped.
 //
 // Border: clamp-to-edge sampling alone makes the edges reflective walls.
-// A sponge layer ramps damping up over the outer uSponge of the texture,
-// so ripples leaving the core fade out instead of bouncing back.
+// A circular sponge ring ramps damping up between radius 0.5 − uSponge and
+// 0.5 (in uv), so ripples fade out in a circle, matching the round edge of
+// the wave field, instead of bouncing off a square wall.
 //
 // Drops: Gaussian impulses added to u_next on the step they're injected.
 
@@ -32,6 +33,7 @@ uniform vec2  uTexel;          // 1 / resolution
 uniform float uC2;             // Courant number squared
 uniform float uDamping;        // ε per step
 uniform float uSponge;         // sponge width in uv
+uniform float uSpongeStrength; // extra damping per step at the outer edge
 uniform vec4  uDrops[MAX_DROPS]; // (u, v, radius in uv, strength)
 uniform int   uDropCount;
 
@@ -50,11 +52,13 @@ void main() {
   float lap  = uE + uW + uN + uS - 4.0 * u;
   float next = 2.0 * u - up + uC2 * lap;
 
-  // Damping, ramping up inside the absorbing border
-  vec2  e = min(vUv, 1.0 - vUv);
-  float edge = min(e.x, e.y);
-  float damp = uDamping + 0.1 * (1.0 - smoothstep(0.0, uSponge, edge));
-  next *= 1.0 - damp;
+  // Damping, ramping up inside the circular absorbing ring. The ramp is
+  // quadratic and gentle: an abrupt jump in damping reflects waves just
+  // like a wall would.
+  float edge = 0.5 - length(vUv - 0.5);          // distance inside the circle
+  float ramp = 1.0 - smoothstep(0.0, uSponge, edge);
+  float damp = uDamping + uSpongeStrength * ramp * ramp;
+  next *= 1.0 - min(damp, 1.0);
 
   for (int i = 0; i < MAX_DROPS; i++) {
     if (i >= uDropCount) break;
