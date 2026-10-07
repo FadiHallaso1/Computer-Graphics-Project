@@ -3,15 +3,64 @@
 Real-time procedural water surface with interactive ripple physics, in WebGL (Three.js).
 Gerstner wave geometry, physically-motivated water shading, and a GPU wave-equation solver you can disturb with the mouse.
 
-## Running it
+## How to open the project
 
-ES modules don't load over `file://`, so serve the folder:
+The project runs in a web browser, but it **cannot be opened by double-clicking `index.html`**. Browsers block JavaScript modules and WebGL textures on pages opened directly from disk (`file://`), so you would see a blank page. It has to be opened through a small local web server. This runs entirely on your own computer; nothing is uploaded anywhere. The easiest option is below; the others are equivalent.
+
+**Requirements**
+
+- A recent desktop browser: Chrome, Edge, Firefox, or Safari 15 or later (WebGL 2 is required).
+- An internet connection when the page first loads (Three.js and lil-gui are loaded from the jsDelivr CDN).
+- Any graphics card from the last several years, including integrated laptop graphics.
+
+### Option 1 (recommended): VS Code with the Live Server extension
+
+1. Install [Visual Studio Code](https://code.visualstudio.com/) if it isn't already installed.
+2. Unzip the project. In VS Code choose **File → Open Folder…** and select the `water-demo` folder, the one that directly contains `index.html`, `src/` and `textures/`.
+3. Open the Extensions panel (**View → Extensions**, or `Ctrl+Shift+X` / `Cmd+Shift+X` on macOS). Search for **Live Server**, choose the one by **Ritwick Dey**, and click **Install**.
+4. In the Explorer panel on the left, right-click `index.html` and choose **Open with Live Server**. (Alternatively, click **Go Live** in the blue status bar at the bottom-right of the window.)
+5. Your browser opens the demo at an address like `http://127.0.0.1:5500/index.html`.
+
+To stop the server, click **Port: 5500** in the status bar.
+
+### Option 2: Python, if it is already installed
+
+Open a terminal in the `water-demo` folder and run:
 
 ```bash
-npx serve .            # or: python3 -m http.server
+python3 -m http.server 8000     # Windows: py -m http.server 8000
 ```
 
-**GitHub Pages:** push the folder to a repo, then *Settings → Pages → Deploy from branch → main / root*. There is no build step; Three.js and lil-gui load from jsDelivr via the import map in `index.html`.
+Then open <http://localhost:8000> in the browser. Press `Ctrl+C` in the terminal to stop.
+
+### Option 3: Node.js
+
+If Node.js is installed, run this in the `water-demo` folder and open the address it prints:
+
+```bash
+npx serve .
+```
+
+### Option 4: online, nothing to install
+
+<!-- TODO: replace with the team's GitHub Pages link before submitting -->
+The project is also published at **https://USERNAME.github.io/REPOSITORY/**. Opening that link in a browser runs the same code with no setup.
+
+### What you should see
+
+A lake at sunset under a bridge, with moving waves, a few kayaks paddling in loops, red mooring buoys and drifting logs. A **Controls** panel sits at the top right, and a short hint card at the bottom left.
+
+### Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| Blank white or black page | The file was opened directly (the address bar starts with `file://`). Use one of the options above. |
+| Page loads, but no sky and the water looks black | The server was started in the wrong folder, so `textures/` isn't found. Start it in the folder that contains `index.html`. |
+| "WebGL 2 is not supported" or nothing renders | Use an up-to-date Chrome, Edge or Firefox, and check that hardware acceleration is enabled in the browser settings. |
+| Low frame rate | Close other heavy tabs. In Chrome, check that `chrome://gpu` reports hardware acceleration as enabled. |
+| Live Server says the port is in use | Close the other Live Server window, or use Option 2. |
+
+For anything else, open the browser's developer console (`F12`, then the **Console** tab) and look for a red error message.
 
 ## Controls
 
@@ -19,12 +68,16 @@ npx serve .            # or: python3 -m http.server
 |---|---|
 | Click / tap | Drop a stone where you clicked |
 | Shift + drag | Stir: a continuous wake of small drops |
+| Right-click | Open a wormhole (whirlpool) at the cursor; right-drag still pans |
 | Drag · scroll / pinch | Orbit · zoom |
 | `R` | Toggle rain |
 | `C` | Calm the water (clear all ripples) |
+| `X` | Close all wormholes |
 | `W` / `N` | Wireframe / normal-map debug views |
 
-The control panel has sliders for wave amplitude, steepness and speed, ripple damping (shown with its half-life), ripple speed, drop strength, and the shading parameters.
+The **Controls** panel has sliders for wave amplitude, steepness and speed; ripple damping (shown with its half-life), ripple speed and drop strength; the shading parameters; and an **Objects** section that can switch the kayaks' reflections and shadows on the water off and on, for side-by-side comparison.
+
+Developers: there is no build step. The import map in `index.html` loads Three.js and lil-gui from jsDelivr. To publish on GitHub Pages, push the folder to a repository and choose *Settings → Pages → Deploy from branch → main / root*.
 
 ## Structure
 
@@ -37,6 +90,7 @@ src/ripples.js              ping-pong wave-equation simulation
 src/gui.js                  lil-gui control panel
 src/floaters.js             kayaks, buoys, logs: geometry, flotation, wakes, ripple readback
 src/reflection.js           planar mirror pass for object reflections
+src/wormholes.js            wormhole lifecycle and the flow field that drags objects
 src/shaders/water.vert.js   Gerstner displacement, analytic tangents, ripple height
 src/shaders/water.frag.js   Fresnel, reflection, Beer–Lambert depth color, sun glint
 src/shaders/ripple.frag.js  one wave-equation step
@@ -117,6 +171,29 @@ The *Objects* panel can switch reflections and shadows off independently for A/B
 *Verification:* with waves and kayaks frozen, toggling reflections changes only a mirrored kayak, paddler and paddle directly under the boat, and toggling shadows changes only a streak running from the kayak away from the sun. A drop 1 unit from a buoy (waves frozen) put 0.62 units of ripple under it and moved the buoy 0.82 units.
 
 *Limitation:* the mirror pass is planar, so reflections are exact only near each object's waterline and approximate farther from it on a steep wave. Objects are opaque against an opaque water surface, so their submerged parts are hidden rather than seen through the water.
+
+## 5. Wormholes (right-click)
+
+A right-click opens a whirlpool funnel centred exactly under the cursor (the click is picked on the moving surface and the funnel is placed in the undisplaced coordinates the shaders use). Up to four can be open at once. Each opens over 1.5 s, holds, and closes over 2.5 s; size, depth, lifetime, pull, swirl and glow are in the *Wormholes* panel.
+
+**Geometry, with analytic normals.** Each wormhole is a height field added on top of the waves, and its exact gradient is added to the surface tangents, exactly like the Gerstner terms. With d = (x, z) − centre, r = |d|, φ = atan2(d_z, d_x), and S the open/close ramp:
+
+```
+funnel   f = −D·S · R² / (r² + R²)                    ∇f = D·S · R² · 2d / (r² + R²)²
+arms     g = A·S · w(r) · sin ψ,   ψ = 3φ + 4·ln(r/R + 0.2) − Φ(t)
+         w(r) = ρ² e^(1−ρ²),  ρ = r / 1.5R
+         ∇g = A·S [ (w′ sin ψ + w cos ψ ∂ψ/∂r) d/r + w cos ψ · 3 · d⊥/r² ]
+```
+
+The envelope w grows as r² near the centre, which cancels the 1/r² in the angular term, so the gradient stays finite at the throat.
+
+*Verification:* against central finite differences of the height at 50,000 points, half of them within 1.5 units of a centre, the maximum relative gradient error is 2.5 × 10⁻⁸, and the gradient is finite at the exact centre.
+
+**Shading.** Inside the funnel the sky reflection fades (the walls occlude the sky) and the water body darkens with depth (less light returns from the throat). Foam gathers in thin lines along the spiral-arm crests, and a faint glow marks the centre.
+
+**Physics.** The water around each wormhole flows in a smoothed Rankine-style vortex: tangential speed v_t = S·V·2(r/R)/(1 + (r/R)²), peaking at r = R and falling off as 1/r, plus an inflow of v_r = −pull·v_t. Floating objects are carried by this flow and turned by its angular velocity. Moored buoys are held back by their lines; kayaks and logs spiral in. Anything that reaches the throat is swallowed (it spins, shrinks and sinks), then reappears at home once all wormholes have closed, and kayaks paddle back to their loops. Opening a wormhole also sends a ripple ring through the wave-equation sim, and flotation and click-picking both use the CPU copy of the funnel height, so objects tilt into the funnel and clicks land on its walls.
+
+*Verification:* a kayak starting 7 units from a wormhole was swallowed after 7.1 s, reappeared after the wormhole closed, and ended back on its loop with zero position error. With the waves frozen, the wormhole opened exactly at the picked point.
 
 ## Credits
 

@@ -13,7 +13,7 @@ const EPS_MAX = 0.02;     // damping 1  -> half-life ~0.3 s
 const toSlider = (eps) => Math.log(eps / EPS_MIN) / Math.log(EPS_MAX / EPS_MIN);
 const toEps = (s) => EPS_MIN * (EPS_MAX / EPS_MIN) ** s;
 
-export function createGui({ water, ripples, view, actions, floaters }) {
+export function createGui({ water, ripples, view, actions, floaters, wormholes }) {
   const gui = new GUI({ title: 'Controls', width: 290 });
 
   // --- Waves (Gerstner) -----------------------------------------------------
@@ -53,6 +53,18 @@ export function createGui({ water, ripples, view, actions, floaters }) {
   objects.add(view, 'objectReflections').name('Reflections in water');
   objects.add(view, 'objectShadows').name('Shadows on water');
   objects.add(water.uniforms.uReflDistort, 'value', 0, 0.1, 0.001).name('Reflection wobble');
+
+  // --- Wormholes (right-click) -----------------------------------------------
+  // Size, depth and lifetime apply to wormholes opened after the change;
+  // pull, swirl and glow apply immediately.
+  const holes = gui.addFolder('Wormholes  (right-click)').close();
+  holes.add(wormholes.params, 'radius', 3, 12, 0.1).name('Size');
+  holes.add(wormholes.params, 'depth', 1, 8, 0.1).name('Depth');
+  holes.add(wormholes.params, 'lifetime', 5, 30, 0.5).name('Lifetime (s)');
+  holes.add(wormholes.params, 'pull', 0, 1.5, 0.01).name('Pull inward');
+  holes.add(wormholes.params, 'swirl', 0, 10, 0.1).name('Swirl speed');
+  holes.add(water.uniforms.uGlow, 'value', 0, 6, 0.1).name('Core glow');
+  holes.add({ close: () => wormholes.closeAll() }, 'close').name('Close all  [X]');
 
   // --- Shading --------------------------------------------------------------
   const shading = gui.addFolder('Shading').close();

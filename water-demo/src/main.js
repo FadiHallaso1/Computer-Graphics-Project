@@ -5,6 +5,7 @@ import { createRipples } from './ripples.js';
 import { createGui } from './gui.js';
 import { createFloaters } from './floaters.js';
 import { createObjectReflection } from './reflection.js';
+import { createWormholes } from './wormholes.js';
 
 // Direction toward the sun disc in the Bridge2 skybox (measured from the
 // brightest region of posz.jpg, x mirrored to match Three's cubemap
@@ -62,7 +63,9 @@ const ripples = createRipples(renderer, { resolution: 768, size: RIPPLE_SIZE });
 water.setRipples(ripples);
 
 // --- Floating objects -----------------------------------------------------
-const floaters = createFloaters({ water, ripples, renderer });
+// Wormholes (right-click): whirlpool funnels that drag the floating objects
+const wormholes = createWormholes({ water, ripples });
+const floaters = createFloaters({ water, ripples, renderer, wormholes });
 scene.add(floaters.root);
 const reflection = createObjectReflection(renderer, { scale: 0.5 });
 reflection.setSize(window.innerWidth, window.innerHeight);
@@ -80,7 +83,7 @@ const actions = {
     controls.update();
   },
 };
-const ui = createGui({ water, ripples, view, actions, floaters });
+const ui = createGui({ water, ripples, view, actions, floaters, wormholes });
 
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -89,6 +92,7 @@ window.addEventListener('keydown', (e) => {
     case 'n': view.normals = !view.normals; water.setShowNormals(view.normals); break;
     case 'r': view.rain = !view.rain; break;
     case 'c': actions.calm(); break;
+    case 'x': wormholes.closeAll(); break;
     default: return;
   }
   ui.refresh();   // keep the panel's checkboxes in sync with the shortcut
@@ -182,6 +186,25 @@ canvas.addEventListener('pointerup', (e) => {
 });
 
 canvas.addEventListener('pointerleave', () => { pointer.over = false; });
+
+// Right-click (press and release without dragging) opens a wormhole at the
+// cursor. Right-drag still pans the camera.
+const rightPress = { x: 0, y: 0, time: 0, active: false };
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.button !== 2) return;
+  Object.assign(rightPress, { x: e.clientX, y: e.clientY, time: performance.now(), active: true });
+});
+canvas.addEventListener('pointerup', (e) => {
+  if (e.button !== 2 || !rightPress.active) return;
+  rightPress.active = false;
+  const moved = Math.hypot(e.clientX - rightPress.x, e.clientY - rightPress.y);
+  if (moved < 6 && performance.now() - rightPress.time < 500) {
+    const hit = castFrom(e.clientX, e.clientY);
+    // the funnel is defined in undisplaced (base) coordinates
+    if (hit) wormholes.open(hit.base.x, hit.base.y);
+  }
+});
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 window.addEventListener('keydown', (e) => { if (e.key === 'Shift') pointer.shift = true; });
 window.addEventListener('keyup', (e) => { if (e.key === 'Shift') pointer.shift = false; });
 window.addEventListener('blur', () => { pointer.shift = false; });
@@ -240,7 +263,7 @@ function updateRain(dt) {
 }
 
 // Console access for tweaking, e.g. demo.water.uniforms.uShininess.value = 400
-window.demo = { scene, camera, controls, renderer, water, ripples, view, floaters };
+window.demo = { scene, camera, controls, renderer, water, ripples, view, floaters, wormholes };
 
 // --- Resize -----------------------------------------------------------------
 window.addEventListener('resize', () => {
@@ -259,6 +282,7 @@ renderer.setAnimationLoop((timestamp) => {
   water.update(dt);
   updatePointer();
   updateRain(dt);
+  wormholes.update(dt);
   floaters.update(dt);
   ripples.update(dt);
   water.setRipples(ripples);

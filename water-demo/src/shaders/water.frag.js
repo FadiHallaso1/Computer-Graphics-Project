@@ -36,6 +36,11 @@
 //       q = P.xz + L.xz · (h − P.y) / L.y,   inside if (q_side/a)² + (q_fwd/b)² < 1
 //     Shadow removes the sun glint and some sunlit in-scatter of the body;
 //     it does not touch the reflection (a shadow can't darken a mirror image).
+//
+// Wormholes (right-click): the funnel geometry comes from the vertex shader.
+// Here the throat darkens with depth (sky occluded by the funnel walls, less
+// light returning from below), foam follows the spiral-arm crests, and a
+// glow marks the centre.
 
 export default /* glsl */ `
 #define NUM_MOUNDS 2
@@ -68,8 +73,14 @@ uniform vec4  uCasterA[MAX_CASTERS]; // (x, z, height, heading)
 uniform vec4  uCasterB[MAX_CASTERS]; // (half width, half length, -, -)
 uniform int   uCasterCount;
 
+uniform vec3  uGlowColor;     // wormhole core glow
+uniform float uGlow;
+
 uniform bool  uShowNormals;   // debug: render N as RGB
 
+varying float vVortexCore;
+varying float vVortexDepth;
+varying float vSpiral;
 varying vec3 vWorldPos;
 varying vec3 vTangentX;
 varying vec3 vTangentZ;
@@ -188,7 +199,19 @@ void main() {
   float spec = pow(max(dot(N, H), 0.0), uShininess);
   vec3  glint = uSunColor * uSunIntensity * spec * schlick(dot(H, V)) * sunLit;
 
+  // Wormhole: inside the funnel less sky is visible (the walls occlude it)
+  // and less light comes back up out of the throat, so both terms darken
+  // with depth.
+  float throat = 1.0 - exp(-0.45 * vVortexDepth);
+  reflection *= 1.0 - 0.6 * throat;
+  body *= 1.0 - 0.85 * throat;
+
   vec3 col = mix(body, reflection, F) + glint;
+
+  // Foam riding the spiral-arm crests, and a glow at the very centre
+  float foam = smoothstep(0.3, 0.85, vSpiral);
+  col = mix(col, vec3(0.86, 0.91, 0.93), foam * 0.4);
+  col += uGlowColor * uGlow * pow(vVortexCore, 16.0);
 
   // Near the horizon, blend into the sky's horizon color so the water
   // meets the skybox without a visible edge.

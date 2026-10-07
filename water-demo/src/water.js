@@ -7,6 +7,11 @@ const DEG = Math.PI / 180;
 /** Max number of objects casting sun shadows on the water (see water.frag.js). */
 export const MAX_CASTERS = 12;
 
+/** Max simultaneous wormholes, and the spiral constants (match water.vert.js). */
+export const MAX_VORTICES = 4;
+const VORTEX_ARMS = 3;
+const VORTEX_TWIST = 4;
+
 /**
  * Base wave set: long swell plus shorter cross-chop. Directions are spread so
  * crests don't line up into an obviously periodic pattern, and wavelengths
@@ -148,6 +153,13 @@ export function createWater({
     uCasterB:        { value: Array.from({ length: MAX_CASTERS }, () => new THREE.Vector4()) },
     uCasterCount:    { value: 0 },
 
+    // Wormholes (right-click): see wormholes.js and water.vert.js
+    uVortexA:        { value: Array.from({ length: MAX_VORTICES }, () => new THREE.Vector4()) },
+    uVortexB:        { value: Array.from({ length: MAX_VORTICES }, () => new THREE.Vector4()) },
+    uVortexCount:    { value: 0 },
+    uGlowColor:      { value: new THREE.Color(0.55, 0.45, 1.0) },
+    uGlow:           { value: 1.2 },
+
     // Ripples (stage 5)
     uRipple:       { value: null },
     uRippleTexel:  { value: 1 / 512 },
@@ -213,6 +225,24 @@ export function createWater({
    * because Σ Q k A = steepness < 1, so a few iterations converge.
    */
   const _p = new THREE.Vector3();
+  /** Wormhole height at undisplaced (x, z): CPU copy of vortexField(). */
+  function vortexHeight(x, z) {
+    let h = 0;
+    for (let i = 0; i < uniforms.uVortexCount.value; i++) {
+      const a = uniforms.uVortexA.value[i], b = uniforms.uVortexB.value[i];
+      const R = a.z, S = a.w;
+      const dx = x - a.x, dz = z - a.y;
+      const r2 = dx * dx + dz * dz, r = Math.sqrt(r2);
+      h -= b.x * S * (R * R) / (r2 + R * R);
+      const rho = r / (1.5 * R);
+      const w = rho * rho * Math.exp(1 - rho * rho);
+      const phi = r2 > 1e-8 ? Math.atan2(dz, dx) : 0;
+      const psi = VORTEX_ARMS * phi + b.w * VORTEX_TWIST * Math.log(r / R + 0.2) - b.z;
+      h += b.y * S * w * Math.sin(psi);
+    }
+    return h;
+  }
+
   function surfaceAt(X, Z) {
     let bx = X, bz = Z;
     for (let i = 0; i < 10; i++) {
@@ -221,7 +251,7 @@ export function createWater({
       bz += Z - _p.z;
     }
     displace(bx, bz, _p);
-    return { height: _p.y, baseX: bx, baseZ: bz };
+    return { height: _p.y + vortexHeight(bx, bz), baseX: bx, baseZ: bz };
   }
 
   /**
@@ -238,7 +268,12 @@ export function createWater({
     const half = rippleSize / 2;
     const maxH = uniforms.uWaves.value.reduce((s, w) => s + w.z, 0) + 1.0;
     let tStart = Math.max((maxH - o.y) / d.y, 0);
-    let tEnd = (-maxH - o.y) / d.y;
+    // the deepest wormhole funnel can go well below the lowest wave trough
+    let maxDepth = 0;
+    for (let i = 0; i < uniforms.uVortexCount.value; i++) {
+      maxDepth = Math.max(maxDepth, uniforms.uVortexB.value[i].x + uniforms.uVortexB.value[i].y);
+    }
+    let tEnd = (-maxH - maxDepth - o.y) / d.y;
     // Clip to the ripple area's XZ square (slab test)
     for (const [oc, dc] of [[o.x, d.x], [o.z, d.z]]) {
       if (Math.abs(dc) < 1e-9) {
@@ -297,6 +332,19 @@ export function createWater({
      * Sun-shadow casters, each an ellipse lying flat at height h:
      * { x, z, h, heading, halfWidth, halfLength }. heading ψ: forward = (sin ψ, cos ψ).
      */
+    /**
+     * Wormholes: [{ x, z, radius, strength, depth, armAmplitude, phase, spin }].
+     */
+    setVortices(list) {
+      const n = Math.min(list.length, MAX_VORTICES);
+      for (let i = 0; i < n; i++) {
+        const v = list[i];
+        uniforms.uVortexA.value[i].set(v.x, v.z, v.radius, v.strength);
+        uniforms.uVortexB.value[i].set(v.depth, v.armAmplitude, v.phase, v.spin);
+      }
+      uniforms.uVortexCount.value = n;
+    },
+    vortexHeight,
     setShadowCasters(casters, on) {
       const n = on ? Math.min(casters.length, MAX_CASTERS) : 0;
       for (let i = 0; i < n; i++) {

@@ -16,6 +16,13 @@ import * as THREE from 'three';
  *  - every object reads the ripple height under it back from the GPU
  *    (asynchronously, one frame late) and adds it to its target height,
  *    so a stone dropped next to a buoy rocks it.
+ *
+ * Wormholes. Objects are carried by the wormhole flow field (an offset
+ * added to their normal position, plus a spin added to their heading).
+ * Moored buoys are held back by their lines; kayaks and logs drift freely
+ * and, once the wormholes are gone, paddle or drift back home. Anything
+ * that reaches a throat is swallowed (shrinks and sinks) and reappears at
+ * home after all wormholes have closed.
  */
 
 // ---------------------------------------------------------------------------
@@ -176,7 +183,7 @@ const SPRINGS = {
 
 // ---------------------------------------------------------------------------
 
-export function createFloaters({ water, ripples, renderer }) {
+export function createFloaters({ water, ripples, renderer, wormholes }) {
   const root = new THREE.Group();
   root.name = 'floaters';
   const floaters = [];
@@ -190,6 +197,13 @@ export function createFloaters({ water, ripples, renderer }) {
       ...opts,
       base: new THREE.Vector2(),
       heading: opts.heading ?? 0,
+      headingNominal: opts.heading ?? 0,  // heading before wormhole spin
+      offset: new THREE.Vector2(),        // displacement by wormhole flow
+      spin: 0,                            // heading change from wormhole flow
+      state: 'float',                     // float | sinking | gone | rising
+      stateT: 0,
+      scale: 1,
+      sink: 0,
       waterLevel: 0,          // local mean water height under the object
       rippleH: 0,             // ripple height under the object (GPU readback)
       k,
@@ -221,6 +235,7 @@ export function createFloaters({ water, ripples, renderer }) {
   });
   LOGS.forEach((o) => {
     const f = addFloater('log', makeLog(), { samples: { fwd: 1.4, side: 0.2 }, lift: 0.03, heading: o.heading });
+    f.headingNominal = o.heading;
     f.anchor = new THREE.Vector2(o.ax, o.az);
     f.driftPhase = Math.random() * Math.PI * 2;
   });
@@ -256,6 +271,7 @@ export function createFloaters({ water, ripples, renderer }) {
   const casters = [];
   const fwd = new THREE.Vector2();
   const tmp = new THREE.Vector3();
+  const flow = { vx: 0, vz: 0, omega: 0 };
   let time = 0;
 
   function sampleSurface(f, cx, cz) {
@@ -287,9 +303,9 @@ export function createFloaters({ water, ripples, renderer }) {
     // heading = direction of travel along the circle
     const vx = -Math.sin(f.angle) * Math.sign(p.w);
     const vz = Math.cos(f.angle) * Math.sign(p.w);
-    f.heading = Math.atan2(vx, vz);
+    f.headingNominal = Math.atan2(vx, vz);
 
-    if (!settings.paddling) { f.paddle.rotation.set(0, 0, 0); return; }
+    if (!settings.paddling || f.state !== 'float') { f.paddle.rotation.set(0, 0, 0); return; }
 
     // Paddle: tilt side to side and sweep; a stroke at each extreme
     f.paddlePhase += dt * 2 * Math.PI * 0.85;
@@ -301,8 +317,12 @@ export function createFloaters({ water, ripples, renderer }) {
       tmp.set(side * 1.15, 0, 0);
       f.paddle.updateWorldMatrix(true, false);   // pose set this frame
       f.paddle.localToWorld(tmp);
-      // world -> base coords: remove the object's orbital offset
-      const [u, v] = uvOf(tmp.x - (f.group.position.x - f.base.x), tmp.z - (f.group.position.z - f.base.y));
+      // world -> base coords: remove the orbital displacement (position
+      // minus the base actually used, i.e. nominal base + wormhole offset)
+      const [u, v] = uvOf(
+        tmp.x - (f.group.position.x - f.base.x - f.offset.x),
+        tmp.z - (f.group.position.z - f.base.y - f.offset.y),
+      );
       ripples.addDrop(u, v, -0.28 * ripples.params.dropStrength, 0.4);
     }
     f.lastCos = c;
@@ -312,8 +332,58 @@ export function createFloaters({ water, ripples, renderer }) {
     if (f.wakeDist > 0.6) {
       f.wakeDist = 0;
       fwd.set(Math.sin(f.heading), Math.cos(f.heading));
-      const [u, v] = uvOf(f.base.x + fwd.x * 2.1, f.base.y + fwd.y * 2.1);
+      const [u, v] = uvOf(f.base.x + f.offset.x + fwd.x * 2.1, f.base.y + f.offset.y + fwd.y * 2.1);
       ripples.addDrop(u, v, -0.1 * ripples.params.dropStrength, 0.45);
+    }
+  }
+
+  /**
+   * Wormhole drift, spin and swallowing. On entry f.base holds the object's
+   * normal position; on exit it holds the position actually used.
+   */
+  function applyWormholes(f, dt) {
+    const active = wormholes && wormholes.count > 0;
+
+    if (f.state === 'float' && active) {
+      wormholes.flowAt(f.base.x + f.offset.x, f.base.y + f.offset.y, flow);
+      f.offset.x += flow.vx * dt;
+      f.offset.y += flow.vz * dt;
+      f.spin += flow.omega * dt;
+    }
+    if (f.kind === 'buoy') {
+      // Mooring line: pulls back toward the anchor and caps the drift
+      f.offset.multiplyScalar(Math.exp(-0.6 * dt));
+      if (f.offset.length() > 5) f.offset.setLength(5);
+    } else if (!active) {
+      // Paddle / drift back home once the water is calm again
+      f.offset.multiplyScalar(Math.exp(-0.35 * dt));
+    }
+    if (!active) f.spin *= Math.exp(-0.5 * dt);
+
+    f.base.add(f.offset);
+    f.heading = f.headingNominal + f.spin;
+
+    // Swallow / reappear
+    if (f.state === 'float' && active && wormholes.throatAt(f.base.x, f.base.y)) {
+      f.state = 'sinking'; f.stateT = 0;
+    }
+    if (f.state === 'sinking') {
+      f.stateT += dt;
+      const t = Math.min(f.stateT / 1.2, 1);
+      f.scale = 1 - t;
+      f.sink = 2.5 * t * t;
+      f.spin += 8 * dt;                         // spins as it goes down
+      if (t >= 1) { f.state = 'gone'; f.group.visible = false; }
+    } else if (f.state === 'gone') {
+      if (!active) {
+        f.offset.set(0, 0); f.spin = 0; f.sink = 0;
+        f.state = 'rising'; f.stateT = 0; f.started = false;
+        f.group.visible = true;
+      }
+    } else if (f.state === 'rising') {
+      f.stateT += dt;
+      f.scale = Math.min(f.stateT / 1.0, 1);
+      if (f.scale >= 1) f.state = 'float';
     }
   }
 
@@ -331,12 +401,16 @@ export function createFloaters({ water, ripples, renderer }) {
         // slow drift around its anchor, slowly turning
         const a = f.driftPhase + time * 0.03;
         f.base.set(f.anchor.x + 3 * Math.cos(a), f.anchor.y + 3 * Math.sin(a));
-        f.heading += dt * 0.02;
+        f.headingNominal += dt * 0.02;
       } else if (f.kind === 'buoy') {
+        f.base.copy(f.anchor);
         // lamp blinks: 0.25 s on every 3 s
         const on = (time + f.blinkOffset) % 3 < 0.25;
         f.lamp.material.emissiveIntensity = on ? 3 : 0;
       }
+
+      applyWormholes(f, dt);
+      if (f.state === 'gone') continue;
 
       // Ride the Gerstner orbit of the base point
       const P = water.displace(f.base.x, f.base.y, tmp);
@@ -357,18 +431,20 @@ export function createFloaters({ water, ripples, renderer }) {
         spring(f, 'roll', surf.roll, h);
       }
 
-      f.group.position.set(cx, f.y, cz);
+      f.group.position.set(cx, f.y - f.sink, cz);
       // Euler YXZ: yaw (heading), then pitch (bow up = −x), then roll
       f.group.rotation.set(-f.pitch, f.heading, f.roll, 'YXZ');
+      f.group.scale.setScalar(Math.max(f.scale, 1e-3));
 
-      // Sun-shadow ellipses (see water.frag.js)
+      // Sun-shadow ellipses (see water.frag.js), shrinking with the object
+      const k = f.scale, y = f.y - f.sink;
       if (f.kind === 'kayak') {
-        casters.push({ x: cx, z: cz, h: f.y + 0.05, heading: f.heading, halfWidth: 0.34, halfLength: 2.3 });
-        casters.push({ x: cx, z: cz, h: f.y + 0.6, heading: f.heading, halfWidth: 0.2, halfLength: 0.22 });
+        casters.push({ x: cx, z: cz, h: y + 0.05 * k, heading: f.heading, halfWidth: 0.34 * k, halfLength: 2.3 * k });
+        casters.push({ x: cx, z: cz, h: y + 0.6 * k, heading: f.heading, halfWidth: 0.2 * k, halfLength: 0.22 * k });
       } else if (f.kind === 'buoy') {
-        casters.push({ x: cx, z: cz, h: f.y + 0.25, heading: 0, halfWidth: 0.55, halfLength: 0.55 });
+        casters.push({ x: cx, z: cz, h: y + 0.25 * k, heading: 0, halfWidth: 0.55 * k, halfLength: 0.55 * k });
       } else {
-        casters.push({ x: cx, z: cz, h: f.y + 0.12, heading: f.heading, halfWidth: 0.25, halfLength: 1.6 });
+        casters.push({ x: cx, z: cz, h: y + 0.12 * k, heading: f.heading, halfWidth: 0.25 * k, halfLength: 1.6 * k });
       }
     }
   }
