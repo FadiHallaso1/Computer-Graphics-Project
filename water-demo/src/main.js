@@ -34,17 +34,23 @@ const fmt = (n) => n.toLocaleString('en-US');
 document.getElementById('hud-stats').textContent =
   `${water.segments}×${water.segments} segments · ${fmt(water.vertexCount)} verts · ${fmt(water.triangleCount)} tris`;
 
-const wireBtn = document.getElementById('btn-wire');
-let wireframe = false;
-function toggleWireframe() {
-  wireframe = !wireframe;
-  water.setWireframe(wireframe);
-  wireBtn.setAttribute('aria-pressed', String(wireframe));
+/** A HUD toggle button bound to a key. */
+function bindToggle(buttonId, key, apply) {
+  const btn = document.getElementById(buttonId);
+  let on = false;
+  const toggle = () => {
+    on = !on;
+    apply(on);
+    btn.setAttribute('aria-pressed', String(on));
+  };
+  btn.addEventListener('click', toggle);
+  window.addEventListener('keydown', (e) => {
+    if (e.target instanceof HTMLInputElement) return;
+    if (e.key.toLowerCase() === key) toggle();
+  });
 }
-wireBtn.addEventListener('click', toggleWireframe);
-window.addEventListener('keydown', (e) => {
-  if (e.key === 'w' || e.key === 'W') toggleWireframe();
-});
+bindToggle('btn-wire', 'w', (on) => water.setWireframe(on));
+bindToggle('btn-normals', 'n', (on) => water.setShowNormals(on));
 
 // --- Resize -----------------------------------------------------------------
 window.addEventListener('resize', () => {
@@ -58,8 +64,8 @@ const timer = new THREE.Timer();
 timer.connect(document);          // pauses cleanly when the tab is hidden
 renderer.setAnimationLoop((timestamp) => {
   timer.update(timestamp);
-  const t = timer.getElapsed();
-  water.update(t);
+  const dt = Math.min(timer.getDelta(), 0.1);   // clamp after stalls
+  water.update(dt);
   controls.update();
   renderer.render(scene, camera);
 });
