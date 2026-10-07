@@ -23,6 +23,13 @@ export function createWater({ size = 100, segments = 256, fogColor } = {}) {
     uGridStep:   { value: (size / segments) * 16 },   // a line every 16 segments
     uFogColor:   { value: new THREE.Color(fogColor ?? 0x0b1a24) },
     uFogDensity: { value: 0.012 },
+    uSunDir:     { value: new THREE.Vector3(-0.4, 0.55, -0.73).normalize() },
+
+    // Single sine wave (stage 2)
+    uAmplitude:  { value: 0.8 },
+    uWavelength: { value: 14.0 },
+    uDirection:  { value: new THREE.Vector2(1.0, 0.35).normalize() },
+    uGravity:    { value: 9.81 },
   };
 
   const material = new THREE.ShaderMaterial({
