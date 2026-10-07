@@ -68,3 +68,6 @@ kbd {
 }
 
 @media (hover: none) { kbd { display: none; } }
+
+.hud-hint { color: var(--text); }
+@media (hover: none) { .hud-hint { display: none; } }

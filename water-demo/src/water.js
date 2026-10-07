@@ -121,6 +121,11 @@ export function createWater({
     uFloorBase:    { value: FLOOR_BASE },
     uMounds:       { value: MOUNDS.map((m) => new THREE.Vector4(...m)) },
 
+    // Ripples (stage 5)
+    uRipple:       { value: null },
+    uRippleTexel:  { value: 1 / 512 },
+    uCoreSize:     { value: coreSize },
+
     uShowNormals:  { value: false },
   };
 
@@ -154,6 +159,81 @@ export function createWater({
   // never cull the surface.
   mesh.frustumCulled = false;
 
+  // --- CPU mirror of the vertex shader (for picking) -----------------------
+
+  /** Gerstner displacement of undisplaced point (x, z) at the current time.
+   *  Same math as water.vert.js inside the core. */
+  function displace(x, z, out = new THREE.Vector3()) {
+    const t = uniforms.uTime.value;
+    const Q = uniforms.uQ.value;
+    const g = uniforms.uGravity.value;
+    let px = x, py = 0, pz = z;
+    for (const w of uniforms.uWaves.value) {           // (angle, λ, A, φ)
+      const Dx = Math.cos(w.x), Dz = Math.sin(w.x);
+      const k = (2 * Math.PI) / w.y;
+      const theta = k * (Dx * x + Dz * z) - Math.sqrt(g * k) * t + w.w;
+      const c = Math.cos(theta);
+      px += Q * w.z * Dx * c;
+      pz += Q * w.z * Dz * c;
+      py += w.z * Math.sin(theta);
+    }
+    return out.set(px, py, pz);
+  }
+
+  /**
+   * Surface at world (X, Z): find the undisplaced base point b whose
+   * Gerstner image lands on (X, Z). b ← (X,Z) − H(b) is a contraction
+   * because Σ Q k A = steepness < 1, so a few iterations converge.
+   */
+  const _p = new THREE.Vector3();
+  function surfaceAt(X, Z) {
+    let bx = X, bz = Z;
+    for (let i = 0; i < 10; i++) {
+      displace(bx, bz, _p);
+      bx += X - _p.x;
+      bz += Z - _p.z;
+    }
+    displace(bx, bz, _p);
+    return { height: _p.y, baseX: bx, baseZ: bz };
+  }
+
+  /**
+   * Intersect a ray with the displaced surface: march from above the
+   * highest possible crest down to below the lowest trough, then bisect
+   * the first crossing. Returns the hit point and the undisplaced base
+   * position (which is what the ripple texture is indexed by), or null.
+   */
+  function raycast(ray) {
+    const o = ray.origin, d = ray.direction;
+    if (d.y > -1e-4) return null;                         // looking up
+    const maxH = uniforms.uWaves.value.reduce((s, w) => s + w.z, 0) + 1.0;
+    const tStart = Math.max((maxH - o.y) / d.y, 0);
+    const tEnd = (-maxH - o.y) / d.y;
+    const stepLen = 0.2;
+    const f = (t) => (o.y + d.y * t) - surfaceAt(o.x + d.x * t, o.z + d.z * t).height;
+
+    let t0 = tStart, f0 = f(t0);
+    for (let t1 = tStart + stepLen; t1 <= tEnd + stepLen; t1 += stepLen) {
+      const f1 = f(t1);
+      if (f0 > 0 && f1 <= 0) {                            // crossed the surface
+        for (let i = 0; i < 20; i++) {
+          const tm = 0.5 * (t0 + t1), fm = f(tm);
+          if (fm > 0) t0 = tm; else t1 = tm;
+        }
+        const t = 0.5 * (t0 + t1);
+        const X = o.x + d.x * t, Z = o.z + d.z * t;
+        const s = surfaceAt(X, Z);
+        return {
+          point: new THREE.Vector3(X, s.height, Z),
+          base: new THREE.Vector2(s.baseX, s.baseZ),
+          uv: new THREE.Vector2(s.baseX / coreSize + 0.5, s.baseZ / coreSize + 0.5),
+        };
+      }
+      t0 = t1; f0 = f1;
+    }
+    return null;
+  }
+
   return {
     mesh,
     uniforms,
@@ -163,7 +243,14 @@ export function createWater({
     vertexCount: geometry.attributes.position.count,
     triangleCount: geometry.index.count / 3,
     syncWaves,
+    displace,
+    raycast,
     setEnvMap(tex) { uniforms.uEnvMap.value = tex; },
+    /** Point the shaders at the latest ripple state (call every frame). */
+    setRipples(ripples) {
+      uniforms.uRipple.value = ripples.texture;
+      uniforms.uRippleTexel.value = 1 / ripples.resolution;
+    },
     setWireframe(on) { material.wireframe = on; },
     setShowNormals(on) { uniforms.uShowNormals.value = on; },
     /** Advance by dt real seconds. Time is accumulated, so changing speed

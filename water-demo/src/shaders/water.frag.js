@@ -20,6 +20,9 @@
 //      the skybox so the highlight sits under the visible sun.
 //
 //   final = mix(body, reflection, F) + glint
+//
+// The normal combines the analytic Gerstner tangents (from the vertex
+// shader) with the ripple height field's slope, sampled per fragment.
 
 export default /* glsl */ `
 #define NUM_MOUNDS 2
@@ -38,10 +41,15 @@ uniform vec3  uAbsorption;    // Beer–Lambert σ per channel (1 / world units)
 uniform float uFloorBase;     // seabed depth away from the shoals
 uniform vec4  uMounds[NUM_MOUNDS]; // (center x, center z, sigma, height)
 
+uniform sampler2D uRipple;    // R = ripple height (world units)
+uniform float uRippleTexel;   // 1 / ripple resolution
+uniform float uCoreSize;      // world size covered by the ripple texture
+
 uniform bool  uShowNormals;   // debug: render N as RGB
 
 varying vec3 vWorldPos;
-varying vec3 vNormal;
+varying vec3 vTangentX;
+varying vec3 vTangentZ;
 varying vec2 vUv;
 
 // Analytic seabed: flat floor plus Gaussian shoals.
@@ -69,7 +77,19 @@ float schlick(float cosTheta) {
 }
 
 void main() {
-  vec3 N = normalize(vNormal);
+  // Normal = Gerstner tangents + ripple slope, crossed per fragment.
+  // Ripple slope by central differences on the simulation grid:
+  //   ∂h/∂x = (h(u+Δ) − h(u−Δ)) / (2Δ · coreSize)
+  vec3 tx = vTangentX;
+  vec3 tz = vTangentZ;
+  if (all(greaterThanEqual(vUv, vec2(0.0))) && all(lessThanEqual(vUv, vec2(1.0)))) {
+    vec2 du = vec2(uRippleTexel, 0.0);
+    vec2 dv = vec2(0.0, uRippleTexel);
+    float scale = 1.0 / (2.0 * uRippleTexel * uCoreSize);
+    tx.y += (texture2D(uRipple, vUv + du).r - texture2D(uRipple, vUv - du).r) * scale;
+    tz.y += (texture2D(uRipple, vUv + dv).r - texture2D(uRipple, vUv - dv).r) * scale;
+  }
+  vec3 N = normalize(cross(tz, tx));
   if (!gl_FrontFacing) N = -N;
 
   if (uShowNormals) {
