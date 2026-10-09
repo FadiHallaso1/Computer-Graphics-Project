@@ -46,7 +46,17 @@ The project was built in seven stages. Each stage added one feature, and most fe
 - **Fading at the horizon.** Each wave fades out where the mesh becomes too coarse to draw it (fewer than about 8 vertices per wavelength). Short chop fades first and long swell carries further, so there is no single line where the waves stop.
 - **CPU copy.** `water.js` also contains a JavaScript copy of the same wave formula. It is used for mouse picking and for making objects float (sections 4 and 5).
 
-**[Video: include video for the Gerstner waves. Show the moving waves, toggle the wireframe view (`W`) to show the mesh, and change Amplitude, Steepness and Speed in the panel.]**
+
+
+
+https://github.com/user-attachments/assets/e1e85587-9d76-4d87-a090-ba99a416332c
+
+
+
+
+https://github.com/user-attachments/assets/fcf150ae-89af-4918-be1e-c312843d6cec
+
+
 
 ---
 
