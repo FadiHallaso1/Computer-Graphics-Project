@@ -34,14 +34,15 @@ The project was built in seven stages. Each stage added one feature, and most fe
 - **Gerstner waves.** The vertex shader moves every vertex with the sum of four Gerstner waves. A Gerstner wave moves points in circles, up and down and also sideways, which bunches vertices together at the crests:
 
   ```
-  θᵢ = kᵢ (Dᵢ · (x, z)) − ωᵢ t + φᵢ
-  x' = x + Σ Q Aᵢ Dᵢₓ cos θᵢ
-  y  =     Σ   Aᵢ     sin θᵢ
-  z' = z + Σ Q Aᵢ Dᵢz cos θᵢ
+  k_i = 2π / λ_i,   ω_i = sqrt(g k_i),   θ_i = k_i (D_i · (x,z)) − ω_i t + φ_i
+
+  x' = x + Σ Q A_i D_ix cos θ_i
+  y  =     Σ   A_i      sin θ_i
+  z' = z + Σ Q A_i D_iz cos θ_i
   ```
 
-- **Realistic wave speed.** The wave speed comes from deep-water physics, ω = √(g·k), so long waves travel faster than short ones.
-- **No self-intersection.** Crests that are too sharp make the surface fold over itself. The steepness factor Q is recalculated from the current amplitudes so that Σ Q·k·A never goes above 1. Because of this, no slider setting can break the surface.
+- **Realistic wave speed.** The wave speed comes from deep-water physics, `ω_i = sqrt(g k_i)`, so long waves travel faster than short ones.
+- **No self-intersection.** Crests that are too sharp make the surface fold over itself. The shared steepness Q (the uniform `uQ`) is recalculated in `syncWaves()` from the current amplitudes so that `Σ Q k_i A_i ≤ 1`. Because of this, no slider setting can break the surface.
 - **Exact normals.** The surface normals come from the exact partial derivatives of the wave formula, not from neighbouring vertices. Tested against finite differences, the maximum error is 1.9 × 10⁻⁶°.
 - **Fading at the horizon.** Each wave fades out where the mesh becomes too coarse to draw it (fewer than about 8 vertices per wavelength). Short chop fades first and long swell carries further, so there is no single line where the waves stop.
 - **CPU copy.** `water.js` also contains a JavaScript copy of the same wave formula. It is used for mouse picking and for making objects float (sections 4 and 5).
