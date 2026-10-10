@@ -232,13 +232,8 @@ https://github.com/user-attachments/assets/51e13606-76b5-4054-be73-b249a0181f1d
 | `X` | Close all wormholes |
 | `W` / `N` | Wireframe / normal debug views |
 
-## 10. Known limitations
 
-- The sponge ring at the edge of the ripple disc is not a true absorbing boundary. At the lowest damping setting, some ripple energy comes back into the disc 20–28 seconds after a drop. Fixing this properly needs an absorbing boundary condition such as Mur's.
-- Object reflections use a single flat mirror, so they are only exact near each object's waterline.
-- The water is opaque to objects, so the parts of objects under the water are hidden instead of being seen through it.
-
-## 11. References
+## 10. References
 
 - J. Tessendorf, *Simulating Ocean Water*, 2001.
 - M. Finch, "Effective Water Simulation from Physical Models," *GPU Gems*, ch. 1, 2004.
