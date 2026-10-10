@@ -201,7 +201,14 @@ https://github.com/user-attachments/assets/3098aa59-e27b-42d4-a69e-a1eeaec7661a
 
 **How it was implemented.** The sliders write directly into the parameter objects and shader uniforms, so every change is visible on the next frame. Ripple damping is shown on a logarithmic 0–1 slider with the half-life underneath ("ripples halve every 2.3 s"), which is easier to understand than the raw damping value. Colours are converted through sRGB hex values so the colour picker doesn't look too dark. The keyboard shortcuts update the panel so the checkboxes stay in sync.
 
-**[Video: include video for the control panel. Open a few folders and change some sliders, for example Water clarity, Deep water and Sun glint.]**
+
+
+https://github.com/user-attachments/assets/d26de071-034e-40c6-84ec-945ae804bba3
+
+
+
+https://github.com/user-attachments/assets/8055f424-dd66-4a5b-a4fc-fd3f6ddd3396
+
 
 ---
 
