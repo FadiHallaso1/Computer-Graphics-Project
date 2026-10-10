@@ -81,7 +81,19 @@ https://github.com/user-attachments/assets/08a3d613-0132-4474-aa81-e64c19efb2af
 - **Sun glint.** A Blinn–Phong highlight is weighted by Fresnel. The sun direction was measured from the sun in the skybox image, so the glint sits exactly under the visible sun.
 - **Final colour:** `vec3 col = mix(body, reflection, F) + glint;`. Far away, the colour blends into the sky's horizon colour so the water meets the sky without a seam.
 
-**[Video: include video for the water shading. Orbit the camera from a low angle (mirror-like water and sun glint) to looking straight down (see-through water and the turquoise sandbank), then toggle the normal view (`N`).]**
+
+
+https://github.com/user-attachments/assets/6d2193b1-4643-4e0b-9ed5-21b991c80f71
+
+
+
+https://github.com/user-attachments/assets/bac25aed-52ed-445e-8647-344104ea1e63
+
+
+
+https://github.com/user-attachments/assets/d193a261-30e5-471c-9ff3-2e88dcd830a9
+
+
 
 ---
 
