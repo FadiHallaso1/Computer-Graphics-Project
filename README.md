@@ -4,7 +4,7 @@
 
 A lake at sunset under a bridge. Rolling waves are generated procedurally on the GPU, and you can disturb the water with the mouse: drop stones, stir a wake, make it rain, or open whirlpools. Kayaks, buoys and logs float on the surface, bob with the waves, are reflected in the water and cast shadows on it.
 
-**Authors:** Fadi Hallaso - 213018781 · Haitam Shahin - 212723407 · Farid Farah - 207933987
+**Authors:** Fadi Hallaso · Haitam Shahin · Farid Farah
 
 ---
 
