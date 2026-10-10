@@ -177,7 +177,10 @@ https://github.com/user-attachments/assets/51e13606-76b5-4054-be73-b249a0181f1d
 - **Analytic shadows.** Each object is described as a flat ellipse at its height. For each water pixel, the shader follows a ray towards the sun and checks whether it passes through any ellipse. Shadowed water loses the sun glint and some brightness, but keeps its reflection, because a shadow can't darken a mirror image.
 - Both effects can be switched off in the Objects panel to compare with and without.
 
-**[Video: include video for the reflections and shadows. Show a kayak crossing the sun glint, then turn "Reflections in water" and "Shadows on water" off and on in the Objects panel.]**
+
+
+https://github.com/user-attachments/assets/3098aa59-e27b-42d4-a69e-a1eeaec7661a
+
 
 ---
 
