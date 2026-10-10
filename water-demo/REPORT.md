@@ -18,7 +18,7 @@ The project was built in seven stages. Each stage added one feature, and most fe
 
 `src/main.js` ties everything together. It sets up the renderer, camera and skybox, handles mouse and keyboard input, and runs the frame loop. Each frame it advances the waves, wormholes, floating objects and ripple simulation, renders the reflection pass, and then renders the scene.
 
-**Technology:** Three.js 0.186 and lil-gui, loaded from a CDN through an import map. There is no build step. The sky is the "Bridge2" cubemap by Emil Persson (Humus).
+**Technology:** Three.js 0.186.1 and lil-gui 0.21.0, loaded from a CDN through an import map. There is no build step. The sky is the "Bridge2" cubemap by Emil Persson (Humus).
 
 ---
 
@@ -79,7 +79,7 @@ https://github.com/user-attachments/assets/08a3d613-0132-4474-aa81-e64c19efb2af
 - **Sky reflection.** The reflected view ray is looked up in the skybox. Distant water uses a blurrier version of the sky to imitate small waves that are too small for the mesh.
 - **Water colour and depth.** The view ray is bent with Snell's law (refractive index 1.333) and followed down to a seabed. The seabed is a flat floor with two sandbanks. Light is absorbed along the way (Beer–Lambert law), with red absorbed fastest. Shallow water over sand therefore looks turquoise, and deep water looks dark blue-green.
 - **Sun glint.** A Blinn–Phong highlight is weighted by Fresnel. The sun direction was measured from the sun in the skybox image, so the glint sits exactly under the visible sun.
-- **Final colour:** `color = mix(waterBody, reflection, fresnel) + glint`. Far away, the colour blends into the sky's horizon colour so the water meets the sky without a seam.
+- **Final colour:** `vec3 col = mix(body, reflection, F) + glint;`. Far away, the colour blends into the sky's horizon colour so the water meets the sky without a seam.
 
 **[Video: include video for the water shading. Orbit the camera from a low angle (mirror-like water and sun glint) to looking straight down (see-through water and the turquoise sandbank), then toggle the normal view (`N`).]**
 
@@ -93,11 +93,11 @@ https://github.com/user-attachments/assets/08a3d613-0132-4474-aa81-e64c19efb2af
 
 **How it was implemented.**
 
-- **The wave equation on the GPU.** Ripples are a simulation of the 2D wave equation, u_tt = c²∇²u. The state is stored in two 768 × 768 float textures that cover a 160-unit disc in the centre of the lake. Each step reads one texture and writes the other ("ping-pong"). Each texel stores the height now and one step ago:
+- **The wave equation on the GPU.** Ripples are a simulation of the 2D wave equation, `u_tt = c² ∇²u`. The state is stored in two 768 × 768 float textures that cover a 160-unit disc in the centre of the lake. Each step reads one texture and writes the other ("ping-pong"). Each texel stores the height now and one step ago:
 
   ```
-  ∇²u    ≈ u_E + u_W + u_N + u_S − 4u
-  u_next = (2u − u_prev + C² ∇²u) · (1 − damping)
+  ∇²u    ≈ u_E + u_W + u_N + u_S − 4u            (5-point Laplacian, Δx = 1 texel)
+  u_next = (2u − u_prev + C² ∇²u) · (1 − ε)      C = cΔt/Δx,  ε = damping
   ```
 
 - **Stable and frame-rate independent.** The simulation runs at a fixed 120 steps per second with a time accumulator. The Courant number C is kept below the 2D stability limit (1/√2), so the simulation never blows up.
@@ -152,16 +152,16 @@ https://github.com/user-attachments/assets/08a3d613-0132-4474-aa81-e64c19efb2af
 
 | Folder | Controls |
 |---|---|
-| Waves | Amplitude, steepness, speed |
-| Ripples | Damping (with its half-life), ripple speed, drop strength, rain, calm |
-| Objects | Show objects, kayaks paddle, reflections, shadows, reflection wobble |
-| Wormholes | Size, depth, lifetime, pull, swirl speed, core glow, close all |
-| Shading | Sun glint, glint sharpness, water clarity, deep-water colour, seabed colour |
-| View | Wireframe, show normals, reset camera |
+| Waves | Amplitude, Steepness, Speed |
+| Ripples | Damping, Half-life, Ripple speed, Drop strength, Rain [R], Calm the water [C] |
+| Objects | Show objects, Kayaks paddle, Reflections in water, Shadows on water, Reflection wobble |
+| Wormholes (right-click) | Size, Depth, Lifetime (s), Pull inward, Swirl speed, Core glow, Close all [X] |
+| Shading | Sun glint, Glint sharpness, Water clarity, Deep water, Seabed |
+| View | Wireframe [W], Show normals [N], Reset camera |
 
 **How it was implemented.** The sliders write directly into the parameter objects and shader uniforms, so every change is visible on the next frame. Ripple damping is shown on a logarithmic 0–1 slider with the half-life underneath ("ripples halve every 2.3 s"), which is easier to understand than the raw damping value. Colours are converted through sRGB hex values so the colour picker doesn't look too dark. The keyboard shortcuts update the panel so the checkboxes stay in sync.
 
-**[Video: include video for the control panel. Open a few folders and change some sliders, for example water clarity, deep-water colour and sun glint.]**
+**[Video: include video for the control panel. Open a few folders and change some sliders, for example Water clarity, Deep water and Sun glint.]**
 
 ---
 
