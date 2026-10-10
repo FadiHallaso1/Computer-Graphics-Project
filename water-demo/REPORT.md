@@ -124,7 +124,23 @@ https://github.com/user-attachments/assets/8c12617d-480a-45ab-aac5-374d41f096e0
 - **Connecting to the waves.** The vertex shader adds the ripple height to the Gerstner waves. The fragment shader adds the ripple slope to the wave tangents for every pixel. This makes ripples look sharper than the mesh alone could show.
 - **Accurate clicking.** A click casts a ray from the camera and steps along it against the moving wave surface on the CPU, then narrows down the crossing point. The drop lands exactly under the cursor (measured error 0.000 px). The measured ripple speed is 7.9–8.3 units/s, against a target of 8.
 
-**[Video: include video for the interactive ripples. Click a few times to drop stones, Shift + drag to stir, then press `R` for rain and `C` to calm the water.]**
+
+
+https://github.com/user-attachments/assets/149ff3db-2832-4dd6-afcf-72cff392129d
+
+
+
+https://github.com/user-attachments/assets/9081854d-8d5f-4bf5-816f-264811497013
+
+
+
+https://github.com/user-attachments/assets/b5fb8bd2-0f77-4343-bfac-d55b0ac895ef
+
+
+
+
+https://github.com/user-attachments/assets/74330d79-db57-4695-917e-b2e5398eafa0
+
 
 ---
 
