@@ -2,8 +2,8 @@
 
 Authors:
 
-Fadi Hallaso
+Fadi Hallaso - 213018781
 
-Haitham Shahin
+Haitham Shahin - 212723407
 
-Farid Farah 207933987
+Farid Farah - 207933987
