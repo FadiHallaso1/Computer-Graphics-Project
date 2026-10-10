@@ -157,7 +157,10 @@ https://github.com/user-attachments/assets/74330d79-db57-4695-917e-b2e5398eafa0
 - **Riding the waves.** Each object is also moved sideways with the circular motion of the Gerstner wave under it, just like a real floating object.
 - **Ripples work both ways.** Kayak paddle strokes and bow waves add drops to the ripple simulation. Each object also reads the ripple height under it back from the GPU with a 1-pixel asynchronous read, so it doesn't stall the GPU. That height is added to the object's target height. In testing, a drop 1 unit from a buoy moved it 0.82 units.
 
-**[Video: include video for the floating objects. Follow a kayak as it paddles and leaves a wake, then click right next to a buoy to show it rocking on the ripples.]**
+
+
+https://github.com/user-attachments/assets/51e13606-76b5-4054-be73-b249a0181f1d
+
 
 ---
 
