@@ -225,7 +225,10 @@ https://github.com/user-attachments/assets/8055f424-dd66-4a5b-a4fc-fd3f6ddd3396
 - **Look.** Inside the funnel the sky reflection fades and the water darkens with depth. Foam follows the spiral-arm crests, and a coloured glow marks the centre.
 - **Flow and physics.** The water around a wormhole follows a smoothed Rankine vortex: it swirls fastest at the funnel's radius and slower further out, with a pull inwards. Floating objects are carried by this flow and turned by its rotation. Opening a wormhole also sends a ripple ring through the ripple simulation. The CPU copy of the funnel height is used for flotation and clicking, so objects tilt into the funnel and clicks land on its walls.
 
-**[Video: include video for the wormhole effect. Right-click near a kayak to open a wormhole, show the kayak being pulled in and swallowed, then show it reappearing after the wormhole closes.]**
+
+
+https://github.com/user-attachments/assets/def96225-cfd9-49a2-9041-c9818f026b84
+
 
 ---
 
